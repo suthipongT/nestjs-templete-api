@@ -1,0 +1,32 @@
+# Dependencies
+node_modules
+/dist
+/coverage
+
+# Environment and secrets
+.env
+.env.*
+dev.env
+prod.env
+
+# Logs and debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build cache / temp
+.cache
+.nyc_output
+tmp
+*.pid
+
+# Editors and OS
+.DS_Store
+.idea
+.vscode
+*.swp
+*.swo
+
+# Local runtime managers
+.n
