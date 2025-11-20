@@ -7,7 +7,7 @@ import cookieParser from 'cookie-parser';
 // middleware ป้องกัน CSRF
 import csurf from 'csurf';
 // type ของ Request/Response จาก express สำหรับ static typing
-import type { Request, Response } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 // โมดูลหลักของแอป
 import { AppModule } from './app.module';
 
@@ -48,7 +48,8 @@ async function bootstrap() {
   // ตรวจโหมด production เพื่อกำหนดคุณสมบัติคุกกี้
   const isProd = configService.get<string>('NODE_ENV') === 'production';
   // อ่าน flag เปิด/ปิด CSRF
-  const csrfEnabled = configService.get<string>('ENABLE_CSRF', 'true') === 'true';
+  const csrfEnabled =
+    configService.get<string>('ENABLE_CSRF', 'true') === 'true';
 
   // แทรก middleware cookie-parser เพื่อตีความคุกกี้จาก request
   app.use(cookieParser(cookieSecret));
@@ -67,8 +68,10 @@ async function bootstrap() {
     // ใช้งาน middleware csurf ในแอป
     app.use(csrfMiddleware);
     // แจก token ไปยังคุกกี้ฝั่ง client (อ่านได้ใน JavaScript) สำหรับส่งกลับมาใน header
-    app.use((req: Request, res: Response, next) => {
-      const token = (req as Request & { csrfToken?: () => string }).csrfToken?.();
+    app.use((req: Request, res: Response, next: NextFunction) => {
+      const token = (
+        req as Request & { csrfToken?: () => string }
+      ).csrfToken?.();
       if (token) {
         res.cookie('XSRF-TOKEN', token, {
           httpOnly: false,
@@ -85,5 +88,9 @@ async function bootstrap() {
   const port = configService.get<number>('APP_PORT', 3400);
   await app.listen(port, host);
 }
-// เรียกฟังก์ชันบูตเพื่อเริ่มเซิร์ฟเวอร์
-bootstrap();
+// เรียกฟังก์ชันบูตเพื่อเริ่มเซิร์ฟเวอร์ พร้อม handle กรณีบูตล้มเหลว
+bootstrap().catch((err) => {
+  // log แล้วปิดโปรเซสด้วยรหัสผิดพลาดเพื่อให้ระบบเฝ้าระบุดักจับได้
+  console.error('Bootstrap failed', err);
+  process.exit(1);
+});

@@ -1,7 +1,7 @@
 // นำ Module decorator สำหรับประกาศโมดูลหลักของ Nest
 import { Module } from '@nestjs/common';
 // นำ APP_GUARD เพื่อตั้งค่า global guard (ใช้ throttling)
-import { APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 // นำ ConfigModule/ConfigService สำหรับโหลดค่า env และ inject ใช้งาน
 import { ConfigModule, ConfigService } from '@nestjs/config';
 // นำ ThrottlerGuard/ThrottlerModule สำหรับ rate limiting
@@ -10,6 +10,9 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 // นำคอนโทรลเลอร์ของแอป (health, csrf-token)
 import { AppController } from './app.controller';
+// นำ interceptor/filter เพื่อตอบกลับในรูปแบบมาตรฐาน
+import { StandardExceptionFilter } from './common/filters/exception.filter';
+import { StandardResponseInterceptor } from './common/interceptors/response.interceptor';
 
 @Module({
   imports: [
@@ -53,6 +56,16 @@ import { AppController } from './app.controller';
       // ตั้งให้ ThrottlerGuard เป็น global guard สำหรับทุกเส้นทาง
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
+    },
+    {
+      // เปลี่ยน response ทุกอันให้เป็นรูปแบบมาตรฐาน
+      provide: APP_INTERCEPTOR,
+      useClass: StandardResponseInterceptor,
+    },
+    {
+      // จัดการ exception ให้ส่ง error response รูปแบบเดียวกัน
+      provide: APP_FILTER,
+      useClass: StandardExceptionFilter,
     },
   ],
 })

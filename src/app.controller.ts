@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   InternalServerErrorException,
+  Req,
 } from '@nestjs/common';
 // type Request จาก express เพื่อใช้กับ csrfToken
 import type { Request } from 'express';
@@ -16,12 +17,16 @@ export class AppController {
   @HttpCode(200)
   getHealth() {
     return {
+      // ข้อความสำหรับ response wrapper
+      message: 'Health check successfully',
       // รายงานสถานะปกติ
-      status: 'ok',
-      // เวลาที่โปรเซสทำงานอยู่ (sec)
-      uptime: process.uptime(),
-      // เวลาปัจจุบันในรูป ISO string
-      timestamp: new Date().toISOString(),
+      results: {
+        status: 'ok',
+        // เวลาที่โปรเซสทำงานอยู่ (sec)
+        uptime: process.uptime(),
+        // เวลาปัจจุบันในรูป ISO string
+        timestamp: new Date().toISOString(),
+      },
     };
   }
 
@@ -29,6 +34,7 @@ export class AppController {
   @Get('csrf-token')
   @HttpCode(200)
   getCsrfToken(
+    @Req()
     req: Request & {
       csrfToken?: () => string;
     },
@@ -40,6 +46,9 @@ export class AppController {
       throw new InternalServerErrorException('CSRF token unavailable');
     }
     // ส่ง token กลับใน response body
-    return { csrfToken: token };
+    return {
+      message: 'Get CSRF token successfully',
+      results: { csrfToken: token },
+    };
   }
 }
