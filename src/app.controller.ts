@@ -6,10 +6,12 @@ import {
   InternalServerErrorException,
   Req,
 } from '@nestjs/common';
+import { ApiExcludeController } from '@nestjs/swagger';
 // type Request จาก express เพื่อใช้กับ csrfToken
 import type { Request } from 'express';
 
 // กำหนดว่าคลาสนี้เป็นคอนโทรลเลอร์ระดับ root (prefix ถูกตั้งใน main.ts)
+@ApiExcludeController()
 @Controller()
 export class AppController {
   // เส้นทาง GET /health สำหรับเช็กสถานะระบบ
