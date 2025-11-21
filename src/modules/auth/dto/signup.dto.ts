@@ -1,6 +1,12 @@
 // DTO สำหรับรับข้อมูลสมัครสมาชิก พร้อม validation
 import { ApiProperty } from '@nestjs/swagger';
-import { IsDateString, IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import {
+  IsDateString,
+  IsEmail,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 
 export class SignupDto {
   @ApiProperty({ example: 'user@example.com' })

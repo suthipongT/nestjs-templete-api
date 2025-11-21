@@ -59,7 +59,9 @@ export class AuthController {
       },
     },
   })
-  @ApiUnauthorizedResponse({ description: 'ข้อมูลรับรองไม่ถูกต้อง หรือผู้ใช้ไม่ใช้งาน' })
+  @ApiUnauthorizedResponse({
+    description: 'ข้อมูลรับรองไม่ถูกต้อง หรือผู้ใช้ไม่ใช้งาน',
+  })
   @ApiBadRequestResponse({ description: 'ข้อมูลไม่ถูกต้อง' })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);

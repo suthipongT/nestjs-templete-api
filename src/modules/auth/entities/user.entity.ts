@@ -42,7 +42,12 @@ export class User {
   birthday?: string | null;
 
   // refresh token ล่าสุด (optional)
-  @Column({ name: 'refresh_token', type: 'varchar', length: 255, nullable: true })
+  @Column({
+    name: 'refresh_token',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
   refreshToken?: string | null;
 
   // token สำหรับ reset password (optional)

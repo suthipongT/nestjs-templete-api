@@ -51,7 +51,10 @@ async function bootstrap() {
         persistAuthorization: true,
         // แนบ CSRF token จากคุกกี้ไปที่ header อัตโนมัติเมื่อลองยิงผ่าน Swagger UI
         requestInterceptor: (req) => {
-          if (typeof window !== 'undefined' && typeof window.document !== 'undefined') {
+          if (
+            typeof window !== 'undefined' &&
+            typeof window.document !== 'undefined'
+          ) {
             const tokenCookie = window.document.cookie
               ?.split(';')
               .map((c) => c.trim())
