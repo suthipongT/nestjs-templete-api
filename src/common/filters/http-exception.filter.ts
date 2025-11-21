@@ -1,11 +1,11 @@
 import type { ArgumentsHost, ExceptionFilter } from '@nestjs/common';
 import { Catch, HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import type { Response } from 'express';
-import type { StandardErrorResponse } from '../types/response.type';
+import type { ErrorResponse } from '../types/response.type';
 
 @Injectable()
 @Catch()
-export class StandardExceptionFilter implements ExceptionFilter {
+export class HttpExceptionFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost) {
     // ทำงานเฉพาะคำขอ HTTP หากไม่ใช่ให้โยนกลับไปตามเดิม
     if (host.getType() !== 'http') {
@@ -20,7 +20,7 @@ export class StandardExceptionFilter implements ExceptionFilter {
   }
 
   // สร้าง payload error ให้อยู่ในรูปแบบมาตรฐาน
-  private buildErrorPayload(exception: unknown): StandardErrorResponse {
+  private buildErrorPayload(exception: unknown): ErrorResponse {
     if (exception instanceof HttpException) {
       const statusCode = exception.getStatus();
       const resp = exception.getResponse();

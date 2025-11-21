@@ -8,11 +8,13 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 // นำ TypeOrmModule สำหรับเชื่อมต่อฐานข้อมูล
 import { TypeOrmModule } from '@nestjs/typeorm';
+// โมดูล auth สำหรับ signup/login
+import { AuthModule } from './modules/auth/auth.module';
 // นำคอนโทรลเลอร์ของแอป (health, csrf-token)
 import { AppController } from './app.controller';
 // นำ interceptor/filter เพื่อตอบกลับในรูปแบบมาตรฐาน
-import { StandardExceptionFilter } from './common/filters/exception.filter';
-import { StandardResponseInterceptor } from './common/interceptors/response.interceptor';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 
 @Module({
   imports: [
@@ -28,8 +30,9 @@ import { StandardResponseInterceptor } from './common/interceptors/response.inte
       inject: [ConfigService],
       useFactory: (config: ConfigService) => [
         {
-          ttl: config.get<number>('RATE_LIMIT_TTL', 60),
-          limit: config.get<number>('RATE_LIMIT_LIMIT', 100),
+          // แปลงค่า ttl/limit เป็น number เพื่อป้องกัน string หลุดไป
+          ttl: Number(config.get<string>('RATE_LIMIT_TTL', '60')),
+          limit: Number(config.get<string>('RATE_LIMIT_LIMIT', '100')),
         },
       ],
     }),
@@ -40,7 +43,7 @@ import { StandardResponseInterceptor } from './common/interceptors/response.inte
       useFactory: (config: ConfigService) => ({
         type: 'mysql',
         host: config.get<string>('DB_HOST', '127.0.0.1'),
-        port: config.get<number>('DB_PORT', 3306),
+        port: Number(config.get<string>('DB_PORT', '3306')),
         username: config.get<string>('DB_USERNAME', 'root'),
         password: config.get<string>('DB_PASSWORD', ''),
         database: config.get<string>('DB_DATABASE', 'we2pos'),
@@ -48,6 +51,8 @@ import { StandardResponseInterceptor } from './common/interceptors/response.inte
         synchronize: false, // ปิด sync schema ใน production เพื่อความปลอดภัย
       }),
     }),
+    // โมดูลจัดการ auth/signup/login และ JWT
+    AuthModule,
   ],
   // ลงทะเบียนคอนโทรลเลอร์หลัก
   controllers: [AppController],
@@ -60,12 +65,12 @@ import { StandardResponseInterceptor } from './common/interceptors/response.inte
     {
       // เปลี่ยน response ทุกอันให้เป็นรูปแบบมาตรฐาน
       provide: APP_INTERCEPTOR,
-      useClass: StandardResponseInterceptor,
+      useClass: ResponseInterceptor,
     },
     {
       // จัดการ exception ให้ส่ง error response รูปแบบเดียวกัน
       provide: APP_FILTER,
-      useClass: StandardExceptionFilter,
+      useClass: HttpExceptionFilter,
     },
   ],
 })

@@ -1,0 +1,6 @@
+// Guard ใช้กับเส้นทางที่ต้องการป้องกันด้วย JWT
+import { Injectable } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
+
+@Injectable()
+export class JwtAuthGuard extends AuthGuard('jwt') {}

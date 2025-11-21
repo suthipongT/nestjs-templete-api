@@ -1,7 +1,10 @@
 // ดึง ConfigService เพื่อใช้ค่า .env ผ่าน dependency injection
+import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 // ใช้ NestFactory เพื่อ boots แอป Nest
 import { NestFactory } from '@nestjs/core';
+// Swagger สำหรับ API docs
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 // middleware แปลงและเซ็น cookie
 import cookieParser from 'cookie-parser';
 // middleware ป้องกัน CSRF
@@ -17,10 +20,53 @@ async function bootstrap() {
   // รับ ConfigService จาก container เพื่ออ่านค่าคอนฟิก
   const configService = app.get(ConfigService);
 
+  // เปิด validation ทั่วแอปเพื่อป้องกัน payload แปลกปลอม
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      transformOptions: { enableImplicitConversion: true },
+    }),
+  );
+
   // กำหนด prefix ของ API (ค่าเริ่มต้นคือ api)
   const apiPrefix = configService.get<string>('API_PREFIX', 'api');
   // ตั้ง global prefix ให้ทุก endpoint เริ่มด้วย /apiPrefix
   app.setGlobalPrefix(apiPrefix);
+
+  // เปิด Swagger docs ถ้าตั้งค่า ENABLE_SWAGGER
+  const enableSwagger =
+    configService.get<string>('ENABLE_SWAGGER', 'true') === 'true';
+  if (enableSwagger) {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('API Documentation')
+      .setDescription('REST API docs')
+      .setVersion('1.0.0')
+      .addBearerAuth()
+      .build();
+    const swaggerDoc = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('docs', app, swaggerDoc, {
+      swaggerOptions: {
+        persistAuthorization: true,
+        // แนบ CSRF token จากคุกกี้ไปที่ header อัตโนมัติเมื่อลองยิงผ่าน Swagger UI
+        requestInterceptor: (req) => {
+          if (typeof window !== 'undefined' && typeof window.document !== 'undefined') {
+            const tokenCookie = window.document.cookie
+              ?.split(';')
+              .map((c) => c.trim())
+              .find((c) => c.startsWith('XSRF-TOKEN='));
+            if (tokenCookie) {
+              const token = decodeURIComponent(tokenCookie.split('=')[1]);
+              req.headers['X-CSRF-Token'] = token;
+            }
+          }
+          return req;
+        },
+      },
+      useGlobalPrefix: false, // ให้ docs อยู่ที่ /docs ไม่ติด prefix
+    });
+  }
 
   // อ่าน CORS_ORIGINS แล้วแปลงเป็นอาร์เรย์ origin
   const allowedOrigins = configService
@@ -35,11 +81,16 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // ใช้ secret สำหรับเซ็น cookie / CSRF token (มี fallback)
-  const cookieSecret =
-    configService.get<string>('COOKIE_SECRET') ??
-    configService.get<string>('CSRF_SECRET') ??
-    'replace-me-cookie-secret';
+  // บังคับให้มี secret สำหรับเซ็นคุกกี้ หากไม่มีให้หยุดบูต
+  const cookieSecret = configService.get<string>('COOKIE_SECRET');
+  if (!cookieSecret) {
+    throw new Error('COOKIE_SECRET is required');
+  }
+  // ถ้ามี CSRF_SECRET ให้ใช้เป็นคีย์หลักสำหรับ signed cookie (รองรับ rotation)
+  const csrfSecret = configService.get<string>('CSRF_SECRET');
+  const cookieSigningKeys = csrfSecret
+    ? [csrfSecret, cookieSecret]
+    : [cookieSecret];
   // ชื่อคุกกี้ที่เก็บ token ฝั่งเซิร์ฟเวอร์เพื่อตรวจสอบ CSRF
   const csrfCookieName = configService.get<string>(
     'CSRF_COOKIE_NAME',
@@ -52,7 +103,7 @@ async function bootstrap() {
     configService.get<string>('ENABLE_CSRF', 'true') === 'true';
 
   // แทรก middleware cookie-parser เพื่อตีความคุกกี้จาก request
-  app.use(cookieParser(cookieSecret));
+  app.use(cookieParser(cookieSigningKeys));
 
   if (csrfEnabled) {
     // สร้าง middleware csurf แบบใช้คุกกี้เก็บ secret
@@ -62,6 +113,7 @@ async function bootstrap() {
         httpOnly: true,
         sameSite: 'lax',
         secure: isProd,
+        signed: true,
       },
     });
 

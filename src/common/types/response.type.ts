@@ -14,7 +14,7 @@ export interface PaginationResult<T> {
 }
 
 // รูปแบบ response กรณี success
-export interface StandardSuccessResponse<T> {
+export interface SuccessResponse<T> {
   statusCode: number;
   success: true;
   message: string;
@@ -22,21 +22,19 @@ export interface StandardSuccessResponse<T> {
 }
 
 // รายละเอียด error ที่ต้องการส่งกลับ
-export interface StandardErrorDetail {
+export interface ErrorDetail {
   field?: string;
   reason: string;
   code: string;
 }
 
 // รูปแบบ response กรณี error
-export interface StandardErrorResponse {
+export interface ErrorResponse {
   statusCode: number;
   success: false;
   message: string;
-  error: StandardErrorDetail;
+  error: ErrorDetail;
 }
 
 // ชนิดผลรวมสำหรับ success/error
-export type StandardResponse<T> =
-  | StandardSuccessResponse<T>
-  | StandardErrorResponse;
+export type ApiResponse<T> = SuccessResponse<T> | ErrorResponse;
