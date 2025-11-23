@@ -7,10 +7,24 @@ import {
   IsOptional,
   IsString,
 } from 'class-validator';
+import type { ValidationOptions } from 'class-validator';
+import type { IsEmailOptions } from 'validator';
+
+// ห่อ decorator IsEmail ให้ type ชัด ปิดคำเตือน no-unsafe-call
+const EmailDecorator = (
+  options?: IsEmailOptions,
+  validationOptions?: ValidationOptions,
+): PropertyDecorator =>
+  (
+    IsEmail as (
+      options?: IsEmailOptions,
+      validationOptions?: ValidationOptions,
+    ) => PropertyDecorator
+  )(options, validationOptions);
 
 export class SignupDto {
   @ApiProperty({ example: 'user@example.com' })
-  @IsEmail()
+  @EmailDecorator()
   @IsNotEmpty()
   email: string;
 

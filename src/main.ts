@@ -46,11 +46,17 @@ async function bootstrap() {
       .addBearerAuth()
       .build();
     const swaggerDoc = SwaggerModule.createDocument(app, swaggerConfig);
+    type SwaggerRequest = {
+      headers?: Record<string, string>;
+      // รองรับฟิลด์อื่น ๆ ที่ swagger ใส่มาโดยไม่สน type
+      [key: string]: unknown;
+    };
     SwaggerModule.setup('docs', app, swaggerDoc, {
       swaggerOptions: {
         persistAuthorization: true,
         // แนบ CSRF token จากคุกกี้ไปที่ header อัตโนมัติเมื่อลองยิงผ่าน Swagger UI
-        requestInterceptor: (req) => {
+        requestInterceptor: (req: SwaggerRequest): SwaggerRequest => {
+          const headers: Record<string, string> = req.headers ?? {};
           if (
             typeof window !== 'undefined' &&
             typeof window.document !== 'undefined'
@@ -61,10 +67,10 @@ async function bootstrap() {
               .find((c) => c.startsWith('XSRF-TOKEN='));
             if (tokenCookie) {
               const token = decodeURIComponent(tokenCookie.split('=')[1]);
-              req.headers['X-CSRF-Token'] = token;
+              headers['X-CSRF-Token'] = token;
             }
           }
-          return req;
+          return { ...req, headers };
         },
       },
       useGlobalPrefix: false, // ให้ docs อยู่ที่ /docs ไม่ติด prefix
@@ -140,7 +146,7 @@ async function bootstrap() {
 
   // อ่าน host/port จาก env แล้วเริ่มฟัง
   const host = configService.get<string>('APP_HOST', '127.0.0.1');
-  const port = configService.get<number>('APP_PORT', 3400);
+  const port = Number(configService.get<string>('APP_PORT', '3400'));
   await app.listen(port, host);
 }
 // เรียกฟังก์ชันบูตเพื่อเริ่มเซิร์ฟเวอร์ พร้อม handle กรณีบูตล้มเหลว

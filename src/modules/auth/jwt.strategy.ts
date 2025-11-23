@@ -2,7 +2,9 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
-import { ExtractJwt, Strategy } from 'passport-jwt';
+import { Strategy } from 'passport-jwt';
+import type { JwtFromRequestFunction, StrategyOptions } from 'passport-jwt';
+import type { Request } from 'express';
 
 export interface JwtPayload {
   sub: number;
@@ -18,11 +20,22 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new Error('JWT_SECRET is required');
     }
 
-    super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+    const jwtFromRequest: JwtFromRequestFunction = (req: Request) => {
+      const header = req.headers?.authorization;
+      if (typeof header !== 'string') return null;
+      const [scheme, token] = header.split(' ');
+      if (scheme?.toLowerCase() !== 'bearer') return null;
+      return token ?? null;
+    };
+
+    const strategyOptions: StrategyOptions = {
+      jwtFromRequest,
       ignoreExpiration: false,
       secretOrKey: secret,
-    });
+    };
+    // PassportStrategy constructor พิมพ์เป็น any ใน type definition ของ Nest แต่ใช้งานได้ปลอดภัย
+
+    super(strategyOptions);
   }
 
   // คืนค่า user object ที่จะถูกแนบใน req.user

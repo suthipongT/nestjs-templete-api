@@ -10,15 +10,21 @@ import type { Response } from 'express';
 import { Readable } from 'node:stream';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
-import type { SuccessResponse } from '../types/response.type';
+import type { ApiResponse, SuccessResponse } from '../types/response.type';
 
 @Injectable()
-export class ResponseInterceptor<T> implements NestInterceptor<T, unknown> {
-  intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
+export class ResponseInterceptor<T>
+  implements
+    NestInterceptor<T, ApiResponse<T> | StreamableFile | Buffer | Readable>
+{
+  intercept(
+    context: ExecutionContext,
+    next: CallHandler,
+  ): Observable<ApiResponse<T> | StreamableFile | Buffer | Readable> {
     // ทำงานต่อเมื่อเป็นคำขอ HTTP เท่านั้น
     if (context.getType() !== 'http') {
       // บริการประเภทอื่น (เช่น RPC/WebSocket) ส่งต่อไปโดยแปลง type ให้สอดคล้อง
-      return next.handle() as Observable<unknown>;
+      return next.handle() as Observable<ApiResponse<T>>;
     }
 
     const res = context.switchToHttp().getResponse<Response>();
@@ -37,7 +43,7 @@ export class ResponseInterceptor<T> implements NestInterceptor<T, unknown> {
 
         // ไม่ห่อผลลัพธ์ในกรณีที่ต้องส่งไฟล์/สตรีม/redirect/204 หรือ header ถูกส่งแล้ว
         if (this.shouldBypassFormatting(data, res)) {
-          return data;
+          return data as ApiResponse<T> | StreamableFile | Buffer | Readable;
         }
 
         const formatted = this.extractPayload(data);
@@ -88,13 +94,16 @@ export class ResponseInterceptor<T> implements NestInterceptor<T, unknown> {
   // กรณีที่ไม่ควร wrap เป็น JSON (ไฟล์/สตรีม/redirect/204 ฯลฯ)
   private shouldBypassFormatting(data: unknown, res: Response): boolean {
     if (res.headersSent) return true;
+    const status = res.statusCode as HttpStatus;
     if (
-      res.statusCode === HttpStatus.NO_CONTENT ||
-      res.statusCode === HttpStatus.NOT_MODIFIED
+      status === HttpStatus.NO_CONTENT ||
+      status === HttpStatus.NOT_MODIFIED
     ) {
       return true;
     }
-    if (res.statusCode >= 300 && res.statusCode < 400) return true;
+    if (status >= HttpStatus.AMBIGUOUS && status < HttpStatus.BAD_REQUEST) {
+      return true;
+    }
     if (data instanceof StreamableFile) return true;
     if (Buffer.isBuffer(data)) return true;
     if (data instanceof Readable) return true;
