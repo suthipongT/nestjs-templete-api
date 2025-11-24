@@ -8,7 +8,7 @@ import {
 
 // Entity ผูกกับตาราง users
 @Entity({ name: 'users' })
-export class User {
+export class UserEntity {
   // คีย์หลัก auto-increment
   @PrimaryGeneratedColumn()
   id: number;

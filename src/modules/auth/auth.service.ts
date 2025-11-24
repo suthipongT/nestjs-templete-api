@@ -7,22 +7,25 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { JwtService } from '@nestjs/jwt';
 import { Repository } from 'typeorm';
+import { randomBytes } from 'node:crypto';
+import * as bcrypt from 'bcryptjs';
+import type { JwtPayload } from './jwt.strategy';
+import type { StringValue } from 'ms';
 import { LoginDto } from './dto/login.dto';
 import { SignupDto } from './dto/signup.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
-import { User } from './entities/user.entity';
-import { JwtService } from '@nestjs/jwt';
+import { UserEntity } from './entities/user.entity';
 
 @Injectable()
 export class AuthService {
   constructor(
-    @InjectRepository(User)
-    private readonly usersRepo: Repository<User>,
+    @InjectRepository(UserEntity)
+    private readonly usersRepo: Repository<UserEntity>,
     private readonly configService: ConfigService,
     private readonly jwtService: JwtService,
   ) {}
@@ -36,9 +39,10 @@ export class AuthService {
     }
 
     // map dto -> entity
+    const hashedPassword = await this.hashPassword(dto.password);
     const user = this.usersRepo.create({
       email,
-      hashPassword: dto.hash_password,
+      hashPassword: hashedPassword,
       firstname: dto.firstname,
       lastname: dto.lastname,
       nickname: dto.nickname ?? null,
@@ -84,19 +88,45 @@ export class AuthService {
     // หา user ตาม email และตรวจรหัสผ่าน
     const email = dto.email.toLowerCase().trim();
     const user = await this.usersRepo.findOne({ where: { email } });
-    if (!user || !this.isPasswordMatch(dto.hash_password, user.hashPassword)) {
+    if (
+      !user ||
+      !(await this.verifyPassword(dto.password, user.hashPassword))
+    ) {
       throw new UnauthorizedException('Invalid credentials');
     }
+
     if (user.isActive !== 'Y') {
       throw new UnauthorizedException('User is not active');
     }
 
     // ออก JWT ด้วย payload มาตรฐาน
     const tokens = await this.issueTokens(user);
+    // เก็บ refresh token เป็น hash ใน DB
+    user.refreshToken = await this.hashPassword(tokens.refreshToken);
+    await this.usersRepo.save(user);
 
     return {
       message: 'Login successfully',
-      results: tokens,
+      results: {
+        ...tokens,
+        user: this.toSafeUser(user),
+      },
+    };
+  }
+
+  async logout(userId: number) {
+    const user = await this.usersRepo.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    user.refreshToken = null;
+    user.tokenVersion += 1; // revoke token เดิมทั้งหมด
+    await this.usersRepo.save(user);
+
+    return {
+      message: 'Logout successfully',
+      results: { acknowledged: true },
     };
   }
 
@@ -107,7 +137,7 @@ export class AuthService {
     }
 
     // ตรวจสอบรหัสผ่านเดิม
-    const isMatch = this.isPasswordMatch(
+    const isMatch = await this.verifyPassword(
       dto.current_password,
       user.hashPassword,
     );
@@ -116,13 +146,13 @@ export class AuthService {
     }
 
     // ถ้ารหัสผ่านใหม่เหมือนเดิมให้ reject เพื่อความปลอดภัย
-    if (this.isPasswordMatch(dto.new_password, user.hashPassword)) {
+    if (await this.verifyPassword(dto.new_password, user.hashPassword)) {
       throw new ConflictException(
         'New password must be different from current password',
       );
     }
 
-    user.hashPassword = dto.new_password;
+    user.hashPassword = await this.hashPassword(dto.new_password);
     // reset refresh token และเพิ่ม tokenVersion เพื่อ revoke token เดิม
     user.refreshToken = null;
     user.tokenVersion += 1;
@@ -164,14 +194,14 @@ export class AuthService {
 
   async refreshToken(dto: RefreshTokenDto) {
     let payload:
-      | {
-          sub: number;
-          email: string;
+      | (JwtPayload & {
           tokenVersion?: number;
-        }
+        })
       | undefined;
     try {
-      payload = await this.jwtService.verifyAsync(dto.refresh_token);
+      payload = await this.jwtService.verifyAsync<
+        JwtPayload & { tokenVersion?: number }
+      >(dto.refresh_token);
     } catch {
       throw new UnauthorizedException('Invalid refresh token');
     }
@@ -183,6 +213,17 @@ export class AuthService {
     const user = await this.usersRepo.findOne({ where: { id: payload.sub } });
     if (!user || user.email !== payload.email) {
       throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    // ตรวจสอบ refresh token ที่เก็บใน DB (hash) ถ้ามี
+    if (user.refreshToken) {
+      const match = await this.verifyPassword(
+        dto.refresh_token,
+        user.refreshToken,
+      );
+      if (!match) {
+        throw new UnauthorizedException('Refresh token is expired or revoked');
+      }
     }
 
     // ตรวจสอบ tokenVersion เพื่อรองรับการ revoke
@@ -198,23 +239,34 @@ export class AuthService {
     const saved = await this.usersRepo.save(user);
 
     const tokens = await this.issueTokens(saved);
+    // อัปเดต refresh token ที่เก็บใน DB ด้วย hash ใหม่
+    saved.refreshToken = await this.hashPassword(tokens.refreshToken);
+    await this.usersRepo.save(saved);
+
     return {
       message: 'Refresh token successfully',
       results: tokens,
     };
   }
 
-  // เปรียบเทียบรหัสผ่านแบบ timing-safe (ปัจจุบันรับ hash ตรง ๆ)
-  private isPasswordMatch(incoming: string, stored: string): boolean {
-    const incomingBuffer = Buffer.from(incoming);
-    const storedBuffer = Buffer.from(stored);
-    if (incomingBuffer.length !== storedBuffer.length) {
-      return false;
-    }
-    return timingSafeEqual(incomingBuffer, storedBuffer);
+  private async hashPassword(password: string): Promise<string> {
+    const saltRounds = Number(
+      this.configService.get<string>('BCRYPT_SALT_ROUNDS', '10'),
+    );
+    return bcrypt.hash(password, saltRounds);
   }
 
-  private toSafeUser(user: User) {
+  private async verifyPassword(
+    incoming: string,
+    hashed: string,
+  ): Promise<boolean> {
+    if (!incoming || !hashed) {
+      return false;
+    }
+    return bcrypt.compare(incoming, hashed);
+  }
+
+  private toSafeUser(user: UserEntity) {
     // ตัดข้อมูลอ่อนไหวก่อนส่งกลับ
     const {
       hashPassword,
@@ -231,7 +283,7 @@ export class AuthService {
     return rest;
   }
 
-  private async issueTokens(user: User): Promise<{
+  private async issueTokens(user: UserEntity): Promise<{
     accessToken: string;
     refreshToken: string;
     tokenVersion: number;
@@ -245,7 +297,7 @@ export class AuthService {
     const refreshExpires = this.configService.get<string>(
       'JWT_REFRESH_EXPIRES_IN',
       '7d',
-    );
+    ) as StringValue;
     const refreshToken = await this.jwtService.signAsync(payload, {
       expiresIn: refreshExpires,
     });

@@ -27,7 +27,7 @@ import { VerifyEmailDto } from './dto/verify-email.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 // prefix /auth
-@ApiTags('Auth')
+@ApiTags('Authentication')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
@@ -73,6 +73,14 @@ export class AuthController {
           accessToken: 'jwt-access-token',
           refreshToken: 'jwt-refresh-token',
           tokenVersion: 0,
+          user: {
+            id: 1,
+            email: 'user@example.com',
+            firstname: 'John',
+            lastname: 'Doe',
+            nickname: null,
+            isActive: 'Y',
+          },
         },
       },
     },
@@ -83,6 +91,34 @@ export class AuthController {
   @ApiBadRequestResponse({ description: 'ข้อมูลไม่ถูกต้อง' })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
+  }
+
+  // POST /auth/logout เพิกถอน refresh token ปัจจุบัน
+  @Post('logout')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Logout (revoke refresh token)' })
+  @ApiOkResponse({
+    description: 'ออกจากระบบสำเร็จและ revoke refresh token',
+    schema: {
+      example: {
+        message: 'Logout successfully',
+        results: { acknowledged: true },
+      },
+    },
+  })
+  @ApiUnauthorizedResponse({ description: 'ต้องล็อกอินก่อน' })
+  logout(
+    @Req()
+    req: Request & {
+      user?: { userId: number; email: string };
+    },
+  ) {
+    if (!req.user?.userId) {
+      throw new Error('Unauthorized'); // JwtAuthGuard ควรกรองไว้แล้ว
+    }
+    return this.authService.logout(req.user.userId);
   }
 
   // POST /auth/forgot-password ขอ reset password (ตอบกลับแบบ blind)
@@ -130,7 +166,7 @@ export class AuthController {
     return this.authService.refreshToken(dto);
   }
 
-  // POST /auth/change-password ต้องล็อกอินและส่งรหัสผ่านเดิม/ใหม่ (เป็น hash)
+  // POST /auth/change-password ต้องล็อกอินและส่งรหัสผ่านเดิม/ใหม่ (plain text; service จะ hash)
   @Post('change-password')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

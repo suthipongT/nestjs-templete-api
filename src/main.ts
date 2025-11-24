@@ -54,6 +54,8 @@ async function bootstrap() {
     SwaggerModule.setup('docs', app, swaggerDoc, {
       swaggerOptions: {
         persistAuthorization: true,
+        // ซ่อน section Schemas จาก sidebar
+        defaultModelsExpandDepth: -1,
         // แนบ CSRF token จากคุกกี้ไปที่ header อัตโนมัติเมื่อลองยิงผ่าน Swagger UI
         requestInterceptor: (req: SwaggerRequest): SwaggerRequest => {
           const headers: Record<string, string> = req.headers ?? {};
@@ -73,6 +75,12 @@ async function bootstrap() {
           return { ...req, headers };
         },
       },
+      // ซ่อนการแสดงเวอร์ชัน OAS/OpenAPI ในหัวเอกสาร
+      customCss: `
+        .swagger-ui .info .title small.version-stamp {
+          display: none !important;
+        }
+      `,
       useGlobalPrefix: false, // ให้ docs อยู่ที่ /docs ไม่ติด prefix
     });
   }

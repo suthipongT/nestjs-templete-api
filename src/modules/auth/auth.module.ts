@@ -16,12 +16,12 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { JwtStrategy } from './jwt.strategy';
-import { User } from './entities/user.entity';
+import { UserEntity } from './entities/user.entity';
 
 @Module({
   imports: [
     ConfigModule, // ทำให้ ConfigService ใช้งานได้ในโมดูลนี้
-    TypeOrmModule.forFeature([User]), // เปิด repository ของ User entity
+    TypeOrmModule.forFeature([UserEntity]), // เปิด repository ของ User entity
     PassportModule.register({ defaultStrategy: 'jwt' }), // ตั้งค่า default strategy เป็น jwt
     JwtModule.registerAsync({
       imports: [ConfigModule],

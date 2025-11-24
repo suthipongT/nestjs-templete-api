@@ -22,8 +22,8 @@ export class LoginDto {
   @IsNotEmpty()
   email: string;
 
-  @ApiProperty({ example: 'hashed-password-here' })
+  @ApiProperty({ example: 'plain-password' })
   @IsString()
   @IsNotEmpty()
-  hash_password: string;
+  password: string;
 }
