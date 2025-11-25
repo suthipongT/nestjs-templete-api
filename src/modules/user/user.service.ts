@@ -6,6 +6,7 @@ import { UserEntity } from './entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { ConfigService } from '@nestjs/config';
+import { ResetUserPasswordDto } from './dto/reset-user-password.dto';
 
 @Injectable()
 export class UserService {
@@ -43,7 +44,7 @@ export class UserService {
     return this.toSafeUser(user);
   }
 
-  async create(dto: CreateUserDto) {
+  async create(dto: CreateUserDto, profileImgPath?: string) {
     const hashed = await this.hashValue(dto.password);
     const user = this.usersRepo.create({
       email: dto.email.toLowerCase().trim(),
@@ -53,12 +54,13 @@ export class UserService {
       nickname: dto.nickname ?? null,
       birthday: dto.birthday ?? null,
       isActive: 'Y',
+      profileImg: profileImgPath ?? dto.profileImg ?? null,
     });
     const saved = await this.usersRepo.save(user);
     return this.toSafeUser(saved);
   }
 
-  async update(id: number, dto: UpdateUserDto) {
+  async update(id: number, dto: UpdateUserDto, profileImgPath?: string) {
     const user = await this.usersRepo.findOne({ where: { id, isActive: 'Y' } });
     if (!user) {
       throw new NotFoundException('User not found');
@@ -68,11 +70,23 @@ export class UserService {
     if (dto.lastname) user.lastname = dto.lastname;
     if (dto.nickname !== undefined) user.nickname = dto.nickname ?? null;
     if (dto.birthday !== undefined) user.birthday = dto.birthday ?? null;
-    if (dto.password) {
-      user.hashPassword = await this.hashValue(dto.password);
-      user.tokenVersion += 1;
-      user.refreshToken = null;
+    if (profileImgPath) {
+      user.profileImg = profileImgPath;
+    } else if (dto.profileImg !== undefined) {
+      user.profileImg = dto.profileImg ?? null;
     }
+    const saved = await this.usersRepo.save(user);
+    return this.toSafeUser(saved);
+  }
+
+  async resetPassword(id: number, dto: ResetUserPasswordDto) {
+    const user = await this.usersRepo.findOne({ where: { id, isActive: 'Y' } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    user.hashPassword = await this.hashValue(dto.new_password);
+    user.tokenVersion += 1;
+    user.refreshToken = null;
     const saved = await this.usersRepo.save(user);
     return this.toSafeUser(saved);
   }
