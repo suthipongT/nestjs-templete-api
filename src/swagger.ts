@@ -50,6 +50,18 @@ export function setupSwagger(
           '/api/auth/refresh-token': 6,
           '/api/auth/reset-password': 7,
           '/api/auth/logout': 8,
+          '/api/user': 20,
+          '/api/user/{id}': 21,
+          '/auth/signup': 1,
+          '/auth/verify-email': 2,
+          '/auth/resend-verify-email': 3,
+          '/auth/login': 4,
+          '/auth/forgot-password': 5,
+          '/auth/refresh-token': 6,
+          '/auth/reset-password': 7,
+          '/auth/logout': 8,
+          '/user': 20,
+          '/user/{id}': 21,
         };
         // ดึง operationId จากข้อมูลที่ Swagger UI ส่งมา (รองรับทั้ง getter และ property ปกติ)
         const opId = (item: any): string => {

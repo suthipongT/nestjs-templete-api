@@ -10,6 +10,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 // โมดูล auth สำหรับ signup/login
 import { AuthModule } from './modules/auth/auth.module';
+import { UserModule } from './modules/user/user.module';
 // นำคอนโทรลเลอร์ของแอป (health, csrf-token)
 import { AppController } from './app.controller';
 // นำ interceptor/filter เพื่อตอบกลับในรูปแบบมาตรฐาน
@@ -53,6 +54,8 @@ import { ResponseInterceptor } from './common/interceptors/response.interceptor'
     }),
     // โมดูลจัดการ auth/signup/login และ JWT
     AuthModule,
+    // โมดูลผู้ใช้ (ต้องใช้ access token)
+    UserModule,
   ],
   // ลงทะเบียนคอนโทรลเลอร์หลัก
   controllers: [AppController],
