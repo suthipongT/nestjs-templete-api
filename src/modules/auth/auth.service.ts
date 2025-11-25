@@ -8,7 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
-import { Repository } from 'typeorm';
+import { Repository, IsNull, Not } from 'typeorm';
 import { randomBytes } from 'node:crypto';
 import * as bcrypt from 'bcryptjs';
 import type { JwtPayload } from './jwt.strategy';
@@ -17,8 +17,9 @@ import { LoginDto } from './dto/login.dto';
 import { SignupDto } from './dto/signup.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
-import { ChangePasswordDto } from './dto/change-password.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ResendVerifyEmailDto } from './dto/resend-verify-email.dto';
 import { UserEntity } from './entities/user.entity';
 
 @Injectable()
@@ -52,18 +53,25 @@ export class AuthService {
 
     const saved = await this.usersRepo.save(user);
     // ส่งกลับข้อมูลผู้ใช้โดยไม่รวม field อ่อนไหว
+    const verifyToken = await this.issueVerifyEmailToken(saved);
+    const exposeVerifyToken =
+      this.configService.get<string>('NODE_ENV') !== 'production';
     return {
       message: 'Signup successfully',
-      results: this.toSafeUser(saved),
+      results: {
+        user: this.toSafeUser(saved),
+        // เพื่อใช้ทดสอบใน dev; ใน production ควรส่งทางอีเมลเท่านั้น
+        verifyToken: exposeVerifyToken ? verifyToken : undefined,
+      },
     };
   }
 
   async verifyEmail(dto: VerifyEmailDto) {
-    // normalize email เป็น lower-case และ trim
-    const email = dto.email.toLowerCase().trim();
-    const user = await this.usersRepo.findOne({ where: { email } });
-    if (!user) {
-      throw new NotFoundException('User not found');
+    // ตรวจสอบ verify token และดึงข้อมูล payload
+    const payload = await this.verifyEmailToken(dto.token);
+    const user = await this.usersRepo.findOne({ where: { id: payload.sub } });
+    if (!user || user.email !== payload.email) {
+      throw new UnauthorizedException('Invalid verify token');
     }
 
     // ถ้ายืนยันแล้วให้ตอบกลับทันที
@@ -84,6 +92,41 @@ export class AuthService {
     };
   }
 
+  async resendVerifyEmail(dto: ResendVerifyEmailDto) {
+    const email = dto.email.toLowerCase().trim();
+    const user = await this.usersRepo.findOne({ where: { email } });
+
+    // ตอบกลับแบบ blind เพื่อลดข้อมูลรั่วไหล ถ้าไม่พบ user
+    if (!user) {
+      return {
+        message: 'If the email exists, a verification link will be sent',
+        results: { acknowledged: true },
+      };
+    }
+
+    // ถ้ายืนยันแล้วตอบกลับทันที
+    if (user.verifyEmailAt) {
+      return {
+        message: 'Email already verified',
+        results: { acknowledged: true },
+      };
+    }
+
+    const token = await this.issueVerifyEmailToken(user);
+    const exposeVerifyToken =
+      this.configService.get<string>('NODE_ENV') !== 'production';
+
+    // TODO: ส่งอีเมลพร้อมลิงก์ยืนยันจริงในระบบ production
+
+    return {
+      message: 'Verification link sent',
+      results: {
+        acknowledged: true,
+        verifyToken: exposeVerifyToken ? token : undefined,
+      },
+    };
+  }
+
   async login(dto: LoginDto) {
     // หา user ตาม email และตรวจรหัสผ่าน
     const email = dto.email.toLowerCase().trim();
@@ -93,6 +136,9 @@ export class AuthService {
       !(await this.verifyPassword(dto.password, user.hashPassword))
     ) {
       throw new UnauthorizedException('Invalid credentials');
+    }
+    if (!user.verifyEmailAt) {
+      throw new UnauthorizedException('Email is not verified');
     }
 
     if (user.isActive !== 'Y') {
@@ -130,44 +176,12 @@ export class AuthService {
     };
   }
 
-  async changePassword(userId: number, dto: ChangePasswordDto) {
-    const user = await this.usersRepo.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    // ตรวจสอบรหัสผ่านเดิม
-    const isMatch = await this.verifyPassword(
-      dto.current_password,
-      user.hashPassword,
-    );
-    if (!isMatch) {
-      throw new UnauthorizedException('Current password is incorrect');
-    }
-
-    // ถ้ารหัสผ่านใหม่เหมือนเดิมให้ reject เพื่อความปลอดภัย
-    if (await this.verifyPassword(dto.new_password, user.hashPassword)) {
-      throw new ConflictException(
-        'New password must be different from current password',
-      );
-    }
-
-    user.hashPassword = await this.hashPassword(dto.new_password);
-    // reset refresh token และเพิ่ม tokenVersion เพื่อ revoke token เดิม
-    user.refreshToken = null;
-    user.tokenVersion += 1;
-
-    const saved = await this.usersRepo.save(user);
-    return {
-      message: 'Change password successfully',
-      results: this.toSafeUser(saved),
-    };
-  }
-
   async forgotPassword(dto: ForgotPasswordDto) {
     // normalize email เป็น lower-case และ trim
     const email = dto.email.toLowerCase().trim();
     const user = await this.usersRepo.findOne({ where: { email } });
+
+    const isDev = this.configService.get<string>('NODE_ENV') !== 'production';
 
     // เพื่อลดข้อมูลรั่วไหล ให้ตอบกลับเหมือนกันไม่ว่าพบหรือไม่พบอีเมล
     const response = {
@@ -182,14 +196,60 @@ export class AuthService {
 
     // สร้าง token และเวลาหมดอายุ
     const resetToken = randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 นาที
+    const expiresInMin = Number(
+      this.configService.get<string>('PASSWORD_RESET_TOKEN_EXPIRES_MIN', '15'),
+    );
+    const expiresAt = new Date(Date.now() + expiresInMin * 60 * 1000);
 
-    user.passwordResetToken = resetToken;
+    user.passwordResetToken = await this.hashPassword(resetToken);
     user.passwordResetExpiresAt = expiresAt;
     await this.usersRepo.save(user);
 
     // ในระบบจริง ควรส่งอีเมลพร้อมลิงก์ที่มี token นี้
-    return response;
+    return {
+      ...response,
+      results: {
+        ...response.results,
+        resetToken: isDev ? resetToken : undefined,
+        expiresInMinutes: isDev ? expiresInMin : undefined,
+      },
+    };
+  }
+
+  async resetPassword(dto: ResetPasswordDto) {
+    const email = dto.email.toLowerCase().trim();
+    const user = await this.usersRepo.findOne({ where: { email } });
+
+    if (
+      !user ||
+      !user.passwordResetToken ||
+      !user.passwordResetExpiresAt ||
+      user.passwordResetExpiresAt.getTime() < Date.now()
+    ) {
+      throw new UnauthorizedException('Invalid or expired reset token');
+    }
+
+    const tokenMatch = await this.verifyPassword(
+      dto.token,
+      user.passwordResetToken,
+    );
+    if (!tokenMatch) {
+      throw new UnauthorizedException('Invalid or expired reset token');
+    }
+
+    // ตั้งรหัสผ่านใหม่
+    user.hashPassword = await this.hashPassword(dto.new_password);
+    // ล้าง token reset และ revoke refresh token เดิม
+    user.passwordResetToken = null;
+    user.passwordResetExpiresAt = null;
+    user.refreshToken = null;
+    user.tokenVersion += 1;
+
+    const saved = await this.usersRepo.save(user);
+    return {
+      message: 'Reset password successfully',
+      results: this.toSafeUser(saved),
+    };
   }
 
   async refreshToken(dto: RefreshTokenDto) {
@@ -303,5 +363,55 @@ export class AuthService {
     });
 
     return { accessToken, refreshToken, tokenVersion: user.tokenVersion };
+  }
+
+  // สร้าง verify-email token สำหรับส่งลิงก์ยืนยัน
+  private async issueVerifyEmailToken(user: UserEntity): Promise<string> {
+    const secret =
+      this.configService.get<string>('JWT_VERIFY_EMAIL_SECRET') ??
+      this.configService.get<string>('JWT_SECRET');
+    const expiresIn = this.configService.get<string>(
+      'JWT_VERIFY_EMAIL_EXPIRES_IN',
+      '1d',
+    ) as StringValue;
+    return this.jwtService.signAsync(
+      {
+        sub: user.id,
+        email: user.email,
+        purpose: 'verify_email',
+      },
+      { secret, expiresIn },
+    );
+  }
+
+  // ตรวจสอบ verify-email token และคืน payload ที่ผ่านการตรวจสอบ
+  private async verifyEmailToken(token: string): Promise<{
+    sub: number;
+    email: string;
+  }> {
+    const secret =
+      this.configService.get<string>('JWT_VERIFY_EMAIL_SECRET') ??
+      this.configService.get<string>('JWT_SECRET');
+    let payload:
+      | {
+          sub?: number;
+          email?: string;
+          purpose?: string;
+        }
+      | undefined;
+    try {
+      payload = await this.jwtService.verifyAsync(token, { secret });
+    } catch {
+      throw new UnauthorizedException('Invalid verify token');
+    }
+    if (
+      !payload?.sub ||
+      typeof payload.sub !== 'number' ||
+      payload.purpose !== 'verify_email' ||
+      typeof payload.email !== 'string'
+    ) {
+      throw new UnauthorizedException('Invalid verify token');
+    }
+    return { sub: payload.sub, email: payload.email };
   }
 }

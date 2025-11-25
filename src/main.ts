@@ -3,8 +3,6 @@ import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 // ใช้ NestFactory เพื่อ boots แอป Nest
 import { NestFactory } from '@nestjs/core';
-// Swagger สำหรับ API docs
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 // middleware แปลงและเซ็น cookie
 import cookieParser from 'cookie-parser';
 // middleware ป้องกัน CSRF
@@ -13,6 +11,7 @@ import csurf from 'csurf';
 import type { NextFunction, Request, Response } from 'express';
 // โมดูลหลักของแอป
 import { AppModule } from './app.module';
+import { setupSwagger } from './swagger';
 
 async function bootstrap() {
   // สร้างแอป Nest โดยใช้ AppModule เป็น root module
@@ -36,54 +35,7 @@ async function bootstrap() {
   app.setGlobalPrefix(apiPrefix);
 
   // เปิด Swagger docs ถ้าตั้งค่า ENABLE_SWAGGER
-  const enableSwagger =
-    configService.get<string>('ENABLE_SWAGGER', 'true') === 'true';
-  if (enableSwagger) {
-    const swaggerConfig = new DocumentBuilder()
-      .setTitle('API Documentation')
-      .setDescription('REST API docs')
-      .setVersion('1.0.0')
-      .addBearerAuth()
-      .build();
-    const swaggerDoc = SwaggerModule.createDocument(app, swaggerConfig);
-    type SwaggerRequest = {
-      headers?: Record<string, string>;
-      // รองรับฟิลด์อื่น ๆ ที่ swagger ใส่มาโดยไม่สน type
-      [key: string]: unknown;
-    };
-    SwaggerModule.setup('docs', app, swaggerDoc, {
-      swaggerOptions: {
-        persistAuthorization: true,
-        // ซ่อน section Schemas จาก sidebar
-        defaultModelsExpandDepth: -1,
-        // แนบ CSRF token จากคุกกี้ไปที่ header อัตโนมัติเมื่อลองยิงผ่าน Swagger UI
-        requestInterceptor: (req: SwaggerRequest): SwaggerRequest => {
-          const headers: Record<string, string> = req.headers ?? {};
-          if (
-            typeof window !== 'undefined' &&
-            typeof window.document !== 'undefined'
-          ) {
-            const tokenCookie = window.document.cookie
-              ?.split(';')
-              .map((c) => c.trim())
-              .find((c) => c.startsWith('XSRF-TOKEN='));
-            if (tokenCookie) {
-              const token = decodeURIComponent(tokenCookie.split('=')[1]);
-              headers['X-CSRF-Token'] = token;
-            }
-          }
-          return { ...req, headers };
-        },
-      },
-      // ซ่อนการแสดงเวอร์ชัน OAS/OpenAPI ในหัวเอกสาร
-      customCss: `
-        .swagger-ui .info .title small.version-stamp {
-          display: none !important;
-        }
-      `,
-      useGlobalPrefix: false, // ให้ docs อยู่ที่ /docs ไม่ติด prefix
-    });
-  }
+  setupSwagger(app, configService);
 
   // อ่าน CORS_ORIGINS แล้วแปลงเป็นอาร์เรย์ origin
   const allowedOrigins = configService

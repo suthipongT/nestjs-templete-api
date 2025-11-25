@@ -17,14 +17,16 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
-import { ChangePasswordDto } from './dto/change-password.dto';
-import { RefreshTokenDto } from './dto/refresh-token.dto';
-import { ForgotPasswordDto } from './dto/forgot-password.dto';
-import { LoginDto } from './dto/login.dto';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { SignupDto } from './dto/signup.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { LoginDto } from './dto/login.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResendVerifyEmailDto } from './dto/resend-verify-email.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 // prefix /auth
 @ApiTags('Authentication')
@@ -34,23 +36,27 @@ export class AuthController {
 
   // POST /auth/signup รับข้อมูลสมัครสมาชิก
   @Post('signup')
-  @ApiOperation({ summary: 'Signup' })
+  @ApiOperation({ summary: 'สมัครสมาชิกใหม่' })
   @ApiCreatedResponse({
     description: 'สมัครสมาชิกสำเร็จ',
     schema: {
       example: {
         message: 'Signup successfully',
         results: {
-          id: 1,
-          email: 'user@example.com',
-          firstname: 'John',
-          lastname: 'Doe',
-          nickname: null,
-          birthday: '1990-01-01',
-          isActive: 'Y',
-          tokenVersion: 0,
-          createdAt: '2025-01-01T00:00:00.000Z',
-          updatedAt: '2025-01-01T00:00:00.000Z',
+          user: {
+            id: 1,
+            email: 'user@example.com',
+            firstname: 'John',
+            lastname: 'Doe',
+            nickname: null,
+            birthday: '1990-01-01',
+            isActive: 'Y',
+            tokenVersion: 0,
+            createdAt: '2025-01-01T00:00:00.000Z',
+            updatedAt: '2025-01-01T00:00:00.000Z',
+          },
+          // dev เท่านั้น จะคืน verifyToken เพื่อทดสอบ
+          verifyToken: 'verify-token-for-testing',
         },
       },
     },
@@ -63,7 +69,7 @@ export class AuthController {
   // POST /auth/login คืน access token เมื่อล็อกอินสำเร็จ
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Login' })
+  @ApiOperation({ summary: 'เข้าสู่ระบบ' })
   @ApiOkResponse({
     description: 'ล็อกอินสำเร็จ',
     schema: {
@@ -98,7 +104,9 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Logout (revoke refresh token)' })
+  @ApiOperation({
+    summary: 'ออกจากระบบ',
+  })
   @ApiOkResponse({
     description: 'ออกจากระบบสำเร็จและ revoke refresh token',
     schema: {
@@ -124,7 +132,9 @@ export class AuthController {
   // POST /auth/forgot-password ขอ reset password (ตอบกลับแบบ blind)
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Request password reset' })
+  @ApiOperation({
+    summary: 'ลืมรหัสผ่าน ขอ Token เพื่อนำไปเปลี่ยนรหัสผ่าน',
+  })
   @ApiOkResponse({
     description:
       'หากอีเมลมีอยู่ ระบบจะส่งลิงก์สำหรับ reset password ไปยังอีเมลนั้น',
@@ -137,6 +147,7 @@ export class AuthController {
     },
   })
   @ApiBadRequestResponse({ description: 'ข้อมูลไม่ถูกต้อง' })
+  @Throttle({ default: { limit: 3, ttl: 60 } }) // จำกัดการขอซ้ำ
   forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.authService.forgotPassword(dto);
   }
@@ -166,17 +177,17 @@ export class AuthController {
     return this.authService.refreshToken(dto);
   }
 
-  // POST /auth/change-password ต้องล็อกอินและส่งรหัสผ่านเดิม/ใหม่ (plain text; service จะ hash)
-  @Post('change-password')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
+  // POST /auth/reset-password ตั้งรหัสผ่านใหม่ด้วย reset token (ไม่ต้องล็อกอิน)
+  @Post('reset-password')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Change password' })
+  @ApiOperation({
+    summary: 'เปลี่ยนรหัสผ่านใหม่ผ่าน forgot password token',
+  })
   @ApiOkResponse({
     description: 'เปลี่ยนรหัสผ่านสำเร็จ',
     schema: {
       example: {
-        message: 'Change password successfully',
+        message: 'Reset password successfully',
         results: {
           id: 1,
           email: 'user@example.com',
@@ -187,27 +198,15 @@ export class AuthController {
       },
     },
   })
-  @ApiUnauthorizedResponse({
-    description: 'ต้องล็อกอินหรือรหัสผ่านเดิมไม่ถูกต้อง',
-  })
   @ApiBadRequestResponse({ description: 'ข้อมูลไม่ถูกต้อง' })
-  changePassword(
-    @Req()
-    req: Request & {
-      user?: { userId: number; email: string };
-    },
-    @Body() dto: ChangePasswordDto,
-  ) {
-    if (!req.user?.userId) {
-      throw new Error('Unauthorized'); // ควรไม่เกิดเพราะ JwtAuthGuard ตรวจสอบแล้ว
-    }
-    return this.authService.changePassword(req.user.userId, dto);
+  changePassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto);
   }
 
   // POST /auth/verify-email ยืนยันอีเมลของผู้ใช้
   @Post('verify-email')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Verify email' })
+  @ApiOperation({ summary: 'ยืนยันอีเมล' })
   @ApiOkResponse({
     description: 'ยืนยันอีเมลสำเร็จ',
     schema: {
@@ -226,5 +225,27 @@ export class AuthController {
   @ApiBadRequestResponse({ description: 'ข้อมูลไม่ถูกต้อง' })
   verifyEmail(@Body() dto: VerifyEmailDto) {
     return this.authService.verifyEmail(dto);
+  }
+
+  // POST /auth/resend-verify-email ขอส่งลิงก์ยืนยันอีเมลใหม่
+  @Post('resend-verify-email')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'ขอลิงก์ยืนยันอีเมลใหม่' })
+  @ApiOkResponse({
+    description: 'ระบบจะส่งลิงก์ยืนยันไปยังอีเมล (ถ้ามี)',
+    schema: {
+      example: {
+        message: 'Verification link sent',
+        results: {
+          acknowledged: true,
+          verifyToken: 'dev-only-token-returned-for-testing',
+        },
+      },
+    },
+  })
+  @ApiBadRequestResponse({ description: 'ข้อมูลไม่ถูกต้อง' })
+  @Throttle({ default: { limit: 3, ttl: 60 } }) // จำกัดการขอซ้ำ
+  resendVerifyEmail(@Body() dto: ResendVerifyEmailDto) {
+    return this.authService.resendVerifyEmail(dto);
   }
 }
