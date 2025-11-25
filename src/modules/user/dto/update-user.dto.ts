@@ -28,7 +28,8 @@ export class UpdateUserDto {
   birthday?: string;
 
   @ApiProperty({
-    description: 'URL หรือ path ของรูปโปรไฟล์ (ถ้าอัปโหลดไฟล์จะตั้งค่าให้อัตโนมัติ)',
+    description:
+      'URL หรือ path ของรูปโปรไฟล์ (ถ้าอัปโหลดไฟล์จะตั้งค่าให้อัตโนมัติ)',
     required: false,
     example: '/uploads/profiles/avatar.jpg',
   })

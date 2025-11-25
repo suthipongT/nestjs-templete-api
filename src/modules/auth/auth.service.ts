@@ -8,9 +8,9 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
-import { Repository, IsNull, Not } from 'typeorm';
+import { Repository } from 'typeorm';
 import { randomBytes } from 'node:crypto';
-import * as bcrypt from 'bcryptjs';
+import bcrypt from 'bcryptjs';
 import type { JwtPayload } from './jwt.strategy';
 import type { StringValue } from 'ms';
 import { LoginDto } from './dto/login.dto';
@@ -313,7 +313,13 @@ export class AuthService {
     const saltRounds = Number(
       this.configService.get<string>('BCRYPT_SALT_ROUNDS', '10'),
     );
-    return bcrypt.hash(password, saltRounds);
+    const hashFn = (
+      bcrypt as unknown as {
+        hash: (data: string, saltOrRounds: string | number) => Promise<string>;
+      }
+    ).hash;
+    const hashed = await hashFn(password, saltRounds);
+    return hashed;
   }
 
   private async verifyPassword(
@@ -323,7 +329,13 @@ export class AuthService {
     if (!incoming || !hashed) {
       return false;
     }
-    return bcrypt.compare(incoming, hashed);
+    const compareFn = (
+      bcrypt as unknown as {
+        compare: (data: string, encrypted: string) => Promise<boolean>;
+      }
+    ).compare;
+    const isMatch = await compareFn(incoming, hashed);
+    return isMatch === true;
   }
 
   private toSafeUser(user: UserEntity) {

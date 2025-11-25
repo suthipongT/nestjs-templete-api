@@ -66,143 +66,6 @@ export class AuthController {
     return this.authService.signup(dto);
   }
 
-  // POST /auth/login คืน access token เมื่อล็อกอินสำเร็จ
-  @Post('login')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'เข้าสู่ระบบ' })
-  @ApiOkResponse({
-    description: 'ล็อกอินสำเร็จ',
-    schema: {
-      example: {
-        message: 'Login successfully',
-        results: {
-          accessToken: 'jwt-access-token',
-          refreshToken: 'jwt-refresh-token',
-          tokenVersion: 0,
-          user: {
-            id: 1,
-            email: 'user@example.com',
-            firstname: 'John',
-            lastname: 'Doe',
-            nickname: null,
-            isActive: 'Y',
-          },
-        },
-      },
-    },
-  })
-  @ApiUnauthorizedResponse({
-    description: 'ข้อมูลรับรองไม่ถูกต้อง หรือผู้ใช้ไม่ใช้งาน',
-  })
-  @ApiBadRequestResponse({ description: 'ข้อมูลไม่ถูกต้อง' })
-  login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
-  }
-
-  // POST /auth/logout เพิกถอน refresh token ปัจจุบัน
-  @Post('logout')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'ออกจากระบบ',
-  })
-  @ApiOkResponse({
-    description: 'ออกจากระบบสำเร็จและ revoke refresh token',
-    schema: {
-      example: {
-        message: 'Logout successfully',
-        results: { acknowledged: true },
-      },
-    },
-  })
-  @ApiUnauthorizedResponse({ description: 'ต้องล็อกอินก่อน' })
-  logout(
-    @Req()
-    req: Request & {
-      user?: { userId: number; email: string };
-    },
-  ) {
-    if (!req.user?.userId) {
-      throw new Error('Unauthorized'); // JwtAuthGuard ควรกรองไว้แล้ว
-    }
-    return this.authService.logout(req.user.userId);
-  }
-
-  // POST /auth/forgot-password ขอ reset password (ตอบกลับแบบ blind)
-  @Post('forgot-password')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'ลืมรหัสผ่าน ขอ Token เพื่อนำไปเปลี่ยนรหัสผ่าน',
-  })
-  @ApiOkResponse({
-    description:
-      'หากอีเมลมีอยู่ ระบบจะส่งลิงก์สำหรับ reset password ไปยังอีเมลนั้น',
-    schema: {
-      example: {
-        message:
-          'If the email exists, a password reset link has been sent to the registered email address',
-        results: { acknowledged: true },
-      },
-    },
-  })
-  @ApiBadRequestResponse({ description: 'ข้อมูลไม่ถูกต้อง' })
-  @Throttle({ default: { limit: 3, ttl: 60 } }) // จำกัดการขอซ้ำ
-  forgotPassword(@Body() dto: ForgotPasswordDto) {
-    return this.authService.forgotPassword(dto);
-  }
-
-  // POST /auth/refresh-token ขอ access/refresh token ใหม่ด้วย refresh token เดิม
-  @Post('refresh-token')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Refresh tokens' })
-  @ApiOkResponse({
-    description: 'ออก access/refresh token ชุดใหม่สำเร็จ',
-    schema: {
-      example: {
-        message: 'Refresh token successfully',
-        results: {
-          accessToken: 'jwt-access-token',
-          refreshToken: 'jwt-refresh-token',
-          tokenVersion: 1,
-        },
-      },
-    },
-  })
-  @ApiBadRequestResponse({ description: 'ข้อมูลไม่ถูกต้อง' })
-  @ApiUnauthorizedResponse({
-    description: 'refresh token ไม่ถูกต้อง หรือถูก revoke',
-  })
-  refreshToken(@Body() dto: RefreshTokenDto) {
-    return this.authService.refreshToken(dto);
-  }
-
-  // POST /auth/reset-password ตั้งรหัสผ่านใหม่ด้วย reset token (ไม่ต้องล็อกอิน)
-  @Post('reset-password')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'เปลี่ยนรหัสผ่านใหม่ผ่าน forgot password token',
-  })
-  @ApiOkResponse({
-    description: 'เปลี่ยนรหัสผ่านสำเร็จ',
-    schema: {
-      example: {
-        message: 'Reset password successfully',
-        results: {
-          id: 1,
-          email: 'user@example.com',
-          firstname: 'John',
-          lastname: 'Doe',
-          tokenVersion: 1,
-        },
-      },
-    },
-  })
-  @ApiBadRequestResponse({ description: 'ข้อมูลไม่ถูกต้อง' })
-  changePassword(@Body() dto: ResetPasswordDto) {
-    return this.authService.resetPassword(dto);
-  }
-
   // POST /auth/verify-email ยืนยันอีเมลของผู้ใช้
   @Post('verify-email')
   @HttpCode(HttpStatus.OK)
@@ -247,5 +110,142 @@ export class AuthController {
   @Throttle({ default: { limit: 3, ttl: 60 } }) // จำกัดการขอซ้ำ
   resendVerifyEmail(@Body() dto: ResendVerifyEmailDto) {
     return this.authService.resendVerifyEmail(dto);
+  }
+
+  // POST /auth/login คืน access token เมื่อล็อกอินสำเร็จ
+  @Post('login')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'เข้าสู่ระบบ' })
+  @ApiOkResponse({
+    description: 'ล็อกอินสำเร็จ',
+    schema: {
+      example: {
+        message: 'Login successfully',
+        results: {
+          accessToken: 'jwt-access-token',
+          refreshToken: 'jwt-refresh-token',
+          tokenVersion: 0,
+          user: {
+            id: 1,
+            email: 'user@example.com',
+            firstname: 'John',
+            lastname: 'Doe',
+            nickname: null,
+            isActive: 'Y',
+          },
+        },
+      },
+    },
+  })
+  @ApiUnauthorizedResponse({
+    description: 'ข้อมูลรับรองไม่ถูกต้อง หรือผู้ใช้ไม่ใช้งาน',
+  })
+  @ApiBadRequestResponse({ description: 'ข้อมูลไม่ถูกต้อง' })
+  login(@Body() dto: LoginDto) {
+    return this.authService.login(dto);
+  }
+
+  // POST /auth/forgot-password ขอ reset password (ตอบกลับแบบ blind)
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'ลืมรหัสผ่าน ขอ Token เพื่อนำไปเปลี่ยนรหัสผ่าน',
+  })
+  @ApiOkResponse({
+    description:
+      'หากอีเมลมีอยู่ ระบบจะส่งลิงก์สำหรับ reset password ไปยังอีเมลนั้น',
+    schema: {
+      example: {
+        message:
+          'If the email exists, a password reset link has been sent to the registered email address',
+        results: { acknowledged: true },
+      },
+    },
+  })
+  @ApiBadRequestResponse({ description: 'ข้อมูลไม่ถูกต้อง' })
+  @Throttle({ default: { limit: 3, ttl: 60 } }) // จำกัดการขอซ้ำ
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto);
+  }
+
+  // POST /auth/reset-password ตั้งรหัสผ่านใหม่ด้วย reset token (ไม่ต้องล็อกอิน)
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'เปลี่ยนรหัสผ่านใหม่ผ่าน forgot password token',
+  })
+  @ApiOkResponse({
+    description: 'เปลี่ยนรหัสผ่านสำเร็จ',
+    schema: {
+      example: {
+        message: 'Reset password successfully',
+        results: {
+          id: 1,
+          email: 'user@example.com',
+          firstname: 'John',
+          lastname: 'Doe',
+          tokenVersion: 1,
+        },
+      },
+    },
+  })
+  @ApiBadRequestResponse({ description: 'ข้อมูลไม่ถูกต้อง' })
+  changePassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto);
+  }
+
+  // POST /auth/refresh-token ขอ access/refresh token ใหม่ด้วย refresh token เดิม
+  @Post('refresh-token')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Refresh tokens' })
+  @ApiOkResponse({
+    description: 'ออก access/refresh token ชุดใหม่สำเร็จ',
+    schema: {
+      example: {
+        message: 'Refresh token successfully',
+        results: {
+          accessToken: 'jwt-access-token',
+          refreshToken: 'jwt-refresh-token',
+          tokenVersion: 1,
+        },
+      },
+    },
+  })
+  @ApiBadRequestResponse({ description: 'ข้อมูลไม่ถูกต้อง' })
+  @ApiUnauthorizedResponse({
+    description: 'refresh token ไม่ถูกต้อง หรือถูก revoke',
+  })
+  refreshToken(@Body() dto: RefreshTokenDto) {
+    return this.authService.refreshToken(dto);
+  }
+
+  // POST /auth/logout เพิกถอน refresh token ปัจจุบัน
+  @Post('logout')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'ออกจากระบบ',
+  })
+  @ApiOkResponse({
+    description: 'ออกจากระบบสำเร็จและ revoke refresh token',
+    schema: {
+      example: {
+        message: 'Logout successfully',
+        results: { acknowledged: true },
+      },
+    },
+  })
+  @ApiUnauthorizedResponse({ description: 'ต้องล็อกอินก่อน' })
+  logout(
+    @Req()
+    req: Request & {
+      user?: { userId: number; email: string };
+    },
+  ) {
+    if (!req.user?.userId) {
+      throw new Error('Unauthorized'); // JwtAuthGuard ควรกรองไว้แล้ว
+    }
+    return this.authService.logout(req.user.userId);
   }
 }

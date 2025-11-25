@@ -32,12 +32,64 @@ export function setupSwagger(
       docExpansion: 'none',
       // จัดเรียงแท็กและ endpoint ตามลำดับที่กำหนด
       tagsSorter: (a: string, b: string) => {
-        const tagOrder = ['Auth'];
+        const tagOrder = ['Authentication', 'User'];
         const aOrder = tagOrder.indexOf(a);
         const bOrder = tagOrder.indexOf(b);
         const safeA = aOrder === -1 ? Number.MAX_SAFE_INTEGER : aOrder;
         const safeB = bOrder === -1 ? Number.MAX_SAFE_INTEGER : bOrder;
         return safeA - safeB || a.localeCompare(b);
+      },
+      operationsSorter: (
+        a: { get?: (key: string) => unknown },
+        b: { get?: (key: string) => unknown },
+      ) => {
+        // ลำดับละเอียด (method + path) ที่ต้องการให้แสดง
+        const opOrder = [
+          'post /api/auth/signup',
+          'post /api/auth/verify-email',
+          'post /api/auth/resend-verify-email',
+          'post /api/auth/login',
+          'post /api/auth/forgot-password',
+          'post /api/auth/reset-password',
+          'post /api/auth/refresh-token',
+          'post /api/auth/logout',
+
+          'get /api/user',
+          'post /api/user',
+          'get /api/user/{id}',
+          'put /api/user/{id}',
+          'post /api/user/reset-password/{id}',
+          'delete /api/user/{id}',
+        ];
+
+        const extract = (
+          op: { get?: (key: string) => unknown },
+          key: 'path' | 'method',
+        ): string => {
+          if (op && typeof op === 'object' && typeof op.get === 'function') {
+            const val = op.get(key);
+            if (typeof val === 'string') return val;
+          }
+          return '';
+        };
+
+        const aPath = extract(a, 'path');
+        const bPath = extract(b, 'path');
+        const aMethod = extract(a, 'method');
+        const bMethod = extract(b, 'method');
+
+        const aKey = `${aMethod.toLowerCase()} ${aPath}`;
+        const bKey = `${bMethod.toLowerCase()} ${bPath}`;
+        const aIdx = opOrder.indexOf(aKey);
+        const bIdx = opOrder.indexOf(bKey);
+        const safeA = aIdx === -1 ? Number.MAX_SAFE_INTEGER : aIdx;
+        const safeB = bIdx === -1 ? Number.MAX_SAFE_INTEGER : bIdx;
+        if (safeA !== safeB) {
+          return safeA - safeB;
+        }
+        // fallback ถ้าไม่พบในลิสต์ ให้เรียงตาม path > method
+        if (aPath !== bPath) return aPath.localeCompare(bPath);
+        return aMethod.localeCompare(bMethod);
       },
       // แนบ CSRF token จากคุกกี้ไปที่ header อัตโนมัติเมื่อลองยิงผ่าน Swagger UI
       requestInterceptor: (req: SwaggerRequest): SwaggerRequest => {
