@@ -1,19 +1,20 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import * as bcrypt from 'bcryptjs';
 import { UserEntity } from './entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { ConfigService } from '@nestjs/config';
 import { ResetUserPasswordDto } from './dto/reset-user-password.dto';
+import { hashValue as bcryptHashValue } from '../../common/utils/hash.util';
+import { toSafeUser as sanitizeUser } from '../../common/utils/user.util';
 
 @Injectable()
 export class UserService {
   constructor(
+    private readonly configService: ConfigService,
     @InjectRepository(UserEntity)
     private readonly usersRepo: Repository<UserEntity>,
-    private readonly configService: ConfigService,
   ) {}
 
   async findAll(page = 1, limit = 20) {
@@ -44,7 +45,7 @@ export class UserService {
     return this.toSafeUser(user);
   }
 
-  async create(dto: CreateUserDto, profileImgPath?: string) {
+  async create(dto: CreateUserDto, actorId?: number, profileImgPath?: string) {
     const hashed = await this.hashValue(dto.password);
     const user = this.usersRepo.create({
       email: dto.email.toLowerCase().trim(),
@@ -55,12 +56,19 @@ export class UserService {
       birthday: dto.birthday ?? null,
       isActive: 'Y',
       profileImg: profileImgPath ?? dto.profileImg ?? null,
+      createdBy: actorId ?? null,
+      updatedBy: actorId ?? null,
     });
     const saved = await this.usersRepo.save(user);
     return this.toSafeUser(saved);
   }
 
-  async update(id: number, dto: UpdateUserDto, profileImgPath?: string) {
+  async update(
+    id: number,
+    dto: UpdateUserDto,
+    actorId?: number,
+    profileImgPath?: string,
+  ) {
     const user = await this.usersRepo.findOne({ where: { id, isActive: 'Y' } });
     if (!user) {
       throw new NotFoundException('User not found');
@@ -75,11 +83,14 @@ export class UserService {
     } else if (dto.profileImg !== undefined) {
       user.profileImg = dto.profileImg ?? null;
     }
+    if (actorId !== undefined) {
+      user.updatedBy = actorId;
+    }
     const saved = await this.usersRepo.save(user);
     return this.toSafeUser(saved);
   }
 
-  async resetPassword(id: number, dto: ResetUserPasswordDto) {
+  async resetPassword(id: number, dto: ResetUserPasswordDto, actorId?: number) {
     const user = await this.usersRepo.findOne({ where: { id, isActive: 'Y' } });
     if (!user) {
       throw new NotFoundException('User not found');
@@ -87,11 +98,14 @@ export class UserService {
     user.hashPassword = await this.hashValue(dto.new_password);
     user.tokenVersion += 1;
     user.refreshToken = null;
+    if (actorId !== undefined) {
+      user.updatedBy = actorId;
+    }
     const saved = await this.usersRepo.save(user);
     return this.toSafeUser(saved);
   }
 
-  async softDelete(id: number) {
+  async softDelete(id: number, actorId?: number) {
     const user = await this.usersRepo.findOne({ where: { id, isActive: 'Y' } });
     if (!user) {
       throw new NotFoundException('User not found');
@@ -99,6 +113,7 @@ export class UserService {
     user.isActive = 'N';
     user.refreshToken = null;
     user.tokenVersion += 1;
+    user.updatedBy = actorId ?? null;
     const saved = await this.usersRepo.save(user);
     return this.toSafeUser(saved);
   }
@@ -107,21 +122,10 @@ export class UserService {
     const saltRounds = Number(
       this.configService.get<string>('BCRYPT_SALT_ROUNDS', '10'),
     );
-    return bcrypt.hash(value, saltRounds);
+    return bcryptHashValue(value, saltRounds);
   }
 
   private toSafeUser(user: UserEntity) {
-    const {
-      hashPassword,
-      refreshToken,
-      passwordResetToken,
-      passwordResetExpiresAt,
-      ...rest
-    } = user;
-    void hashPassword;
-    void refreshToken;
-    void passwordResetToken;
-    void passwordResetExpiresAt;
-    return rest;
+    return sanitizeUser(user);
   }
 }

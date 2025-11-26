@@ -13,6 +13,7 @@ import {
   UseGuards,
   UploadedFile,
   UseInterceptors,
+  Req,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -24,16 +25,17 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import * as path from 'node:path';
-import * as fs from 'node:fs';
-import { randomBytes } from 'node:crypto';
 import type { Express } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { ResetUserPasswordDto } from './dto/reset-user-password.dto';
 import { UserService } from './user.service';
+import { buildPagination } from '../../common/utils/pagination.util';
+import {
+  profileImageMulterOptions,
+  buildProfileImagePath,
+} from '../../common/utils/multer.util';
 
 @ApiTags('User')
 @ApiBearerAuth()
@@ -61,8 +63,10 @@ export class UserController {
     @Query('page', new ParseIntPipe({ optional: true })) page?: number,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
   ) {
-    const pageNum = Math.max(1, page ?? 1);
-    const take = Math.max(1, limit ?? 20);
+    const { page: pageNum, limit: take } = buildPagination(page, limit, {
+      defaultLimit: 20,
+      maxLimit: 100,
+    });
     return this.userService.findAll(pageNum, take);
   }
 
@@ -90,38 +94,19 @@ export class UserController {
       required: ['email', 'password', 'firstname', 'lastname'],
     },
   })
-  @UseInterceptors(
-    FileInterceptor('profile_img', {
-      storage: diskStorage({
-        destination: (req, file, cb) => {
-          const uploadPath = path.join(
-            process.cwd(),
-            'uploads',
-            'user',
-            'profile',
-          );
-          fs.mkdirSync(uploadPath, { recursive: true });
-          cb(null, uploadPath);
-        },
-        filename: (req, file, cb) => {
-          const ext = path.extname(file.originalname);
-          const base = path.basename(file.originalname, ext);
-          const suffix = randomBytes(6).toString('hex');
-          const safeName = `${base}-${Date.now()}-${suffix}${ext}`;
-          cb(null, safeName);
-        },
-      }),
-    }),
-  )
+  @UseInterceptors(FileInterceptor('profile_img', profileImageMulterOptions()))
   @ApiOperation({ summary: 'สร้างผู้ใช้ใหม่' })
   @ApiOkResponse({ description: 'สร้างสำเร็จ' })
   async create(
     @Body() dto: CreateUserDto,
     @UploadedFile() file?: Express.Multer.File,
+    @Req() req?: Request & { user?: { userId: number } },
   ) {
+    const actorId = req?.user?.userId;
     const created = await this.userService.create(
       dto,
-      file ? `/uploads/user/profile/${file.filename}` : undefined,
+      actorId,
+      buildProfileImagePath(file),
     );
     return { message: 'Create user successfully', results: created };
   }
@@ -156,40 +141,21 @@ export class UserController {
       },
     },
   })
-  @UseInterceptors(
-    FileInterceptor('profile_img', {
-      storage: diskStorage({
-        destination: (req, file, cb) => {
-          const uploadPath = path.join(
-            process.cwd(),
-            'uploads',
-            'user',
-            'profile',
-          );
-          fs.mkdirSync(uploadPath, { recursive: true });
-          cb(null, uploadPath);
-        },
-        filename: (req, file, cb) => {
-          const ext = path.extname(file.originalname);
-          const base = path.basename(file.originalname, ext);
-          const suffix = randomBytes(6).toString('hex');
-          const safeName = `${base}-${Date.now()}-${suffix}${ext}`;
-          cb(null, safeName);
-        },
-      }),
-    }),
-  )
+  @UseInterceptors(FileInterceptor('profile_img', profileImageMulterOptions()))
   @ApiOperation({ summary: 'อัปเดตข้อมูลผู้ใช้' })
   @ApiOkResponse({ description: 'อัปเดตสำเร็จ' })
   async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateUserDto,
     @UploadedFile() file?: Express.Multer.File,
+    @Req() req?: Request & { user?: { userId: number } },
   ) {
+    const actorId = req?.user?.userId;
     const updated = await this.userService.update(
       id,
       dto,
-      file ? `/uploads/user/profile/${file.filename}` : undefined,
+      actorId,
+      buildProfileImagePath(file),
     );
     return { message: 'Update user successfully', results: updated };
   }
@@ -211,16 +177,22 @@ export class UserController {
   async resetPassword(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: ResetUserPasswordDto,
+    @Req() req?: Request & { user?: { userId: number } },
   ) {
-    const updated = await this.userService.resetPassword(id, dto);
+    const actorId = req?.user?.userId;
+    const updated = await this.userService.resetPassword(id, dto, actorId);
     return { message: 'Reset user password successfully', results: updated };
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'ลบผู้ใช้แบบ soft delete (isActive=N)' })
+  @ApiOperation({ summary: 'ลบผู้ใช้งาน' })
   @ApiOkResponse({ description: 'ลบสำเร็จ' })
-  async remove(@Param('id', ParseIntPipe) id: number) {
-    const removed = await this.userService.softDelete(id);
+  async remove(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req?: Request & { user?: { userId: number } },
+  ) {
+    const actorId = req?.user?.userId;
+    const removed = await this.userService.softDelete(id, actorId);
     return { message: 'Delete user successfully', results: removed };
   }
 }

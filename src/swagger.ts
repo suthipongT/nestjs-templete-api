@@ -32,7 +32,7 @@ export function setupSwagger(
       docExpansion: 'none',
       // จัดเรียงแท็กและ endpoint ตามลำดับที่กำหนด
       tagsSorter: (a: string, b: string) => {
-        const tagOrder = ['Authentication', 'User'];
+        const tagOrder = ['Authen', 'User', 'Duty'];
         const aOrder = tagOrder.indexOf(a);
         const bOrder = tagOrder.indexOf(b);
         const safeA = aOrder === -1 ? Number.MAX_SAFE_INTEGER : aOrder;
@@ -60,6 +60,10 @@ export function setupSwagger(
           'put /api/user/{id}',
           'post /api/user/reset-password/{id}',
           'delete /api/user/{id}',
+
+          'get /api/duties',
+          'post /api/duties',
+          'get /api/duties/{id}',
         ];
 
         const extract = (

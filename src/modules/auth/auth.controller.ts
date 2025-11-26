@@ -29,7 +29,7 @@ import { ResendVerifyEmailDto } from './dto/resend-verify-email.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 
 // prefix /auth
-@ApiTags('Authentication')
+@ApiTags('Authen')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}

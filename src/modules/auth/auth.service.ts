@@ -10,7 +10,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { Repository } from 'typeorm';
 import { randomBytes } from 'node:crypto';
-import bcrypt from 'bcryptjs';
 import type { JwtPayload } from './jwt.strategy';
 import type { StringValue } from 'ms';
 import { LoginDto } from './dto/login.dto';
@@ -21,6 +20,12 @@ import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ResendVerifyEmailDto } from './dto/resend-verify-email.dto';
 import { UserEntity } from '../user/entities/user.entity';
+import { hashValue, verifyValue } from '../../common/utils/hash.util';
+import { toSafeUser as sanitizeUser } from '../../common/utils/user.util';
+import {
+  issueVerifyEmailToken as issueVerifyEmailTokenUtil,
+  verifyEmailToken as verifyEmailTokenUtil,
+} from '../../common/utils/token.util';
 
 @Injectable()
 export class AuthService {
@@ -53,13 +58,17 @@ export class AuthService {
 
     const saved = await this.usersRepo.save(user);
     // ส่งกลับข้อมูลผู้ใช้โดยไม่รวม field อ่อนไหว
-    const verifyToken = await this.issueVerifyEmailToken(saved);
+    const verifyToken = await issueVerifyEmailTokenUtil(
+      saved,
+      this.jwtService,
+      this.configService,
+    );
     const exposeVerifyToken =
       this.configService.get<string>('NODE_ENV') !== 'production';
     return {
       message: 'Signup successfully',
       results: {
-        user: this.toSafeUser(saved),
+        user: this.safeUser(saved),
         // เพื่อใช้ทดสอบใน dev; ใน production ควรส่งทางอีเมลเท่านั้น
         verifyToken: exposeVerifyToken ? verifyToken : undefined,
       },
@@ -68,7 +77,11 @@ export class AuthService {
 
   async verifyEmail(dto: VerifyEmailDto) {
     // ตรวจสอบ verify token และดึงข้อมูล payload
-    const payload = await this.verifyEmailToken(dto.token);
+    const payload = await verifyEmailTokenUtil(
+      dto.token,
+      this.jwtService,
+      this.configService,
+    );
     const user = await this.usersRepo.findOne({ where: { id: payload.sub } });
     if (!user || user.email !== payload.email) {
       throw new UnauthorizedException('Invalid verify token');
@@ -78,7 +91,7 @@ export class AuthService {
     if (user.verifyEmailAt) {
       return {
         message: 'Email already verified',
-        results: this.toSafeUser(user),
+        results: this.safeUser(user),
       };
     }
 
@@ -88,7 +101,7 @@ export class AuthService {
 
     return {
       message: 'Verify email successfully',
-      results: this.toSafeUser(saved),
+      results: this.safeUser(saved),
     };
   }
 
@@ -112,7 +125,11 @@ export class AuthService {
       };
     }
 
-    const token = await this.issueVerifyEmailToken(user);
+    const token = await issueVerifyEmailTokenUtil(
+      user,
+      this.jwtService,
+      this.configService,
+    );
     const exposeVerifyToken =
       this.configService.get<string>('NODE_ENV') !== 'production';
 
@@ -155,7 +172,7 @@ export class AuthService {
       message: 'Login successfully',
       results: {
         ...tokens,
-        user: this.toSafeUser(user),
+        user: this.safeUser(user),
       },
     };
   }
@@ -248,7 +265,7 @@ export class AuthService {
     const saved = await this.usersRepo.save(user);
     return {
       message: 'Reset password successfully',
-      results: this.toSafeUser(saved),
+      results: this.safeUser(saved),
     };
   }
 
@@ -310,49 +327,22 @@ export class AuthService {
   }
 
   private async hashPassword(password: string): Promise<string> {
-    const saltRounds = Number(
-      this.configService.get<string>('BCRYPT_SALT_ROUNDS', '10'),
-    );
-    const hashFn = (
-      bcrypt as unknown as {
-        hash: (data: string, saltOrRounds: string | number) => Promise<string>;
-      }
-    ).hash;
-    const hashed = await hashFn(password, saltRounds);
-    return hashed;
+    return hashValue(password, this.getSaltRounds());
   }
 
   private async verifyPassword(
     incoming: string,
     hashed: string,
   ): Promise<boolean> {
-    if (!incoming || !hashed) {
-      return false;
-    }
-    const compareFn = (
-      bcrypt as unknown as {
-        compare: (data: string, encrypted: string) => Promise<boolean>;
-      }
-    ).compare;
-    const isMatch = await compareFn(incoming, hashed);
-    return isMatch === true;
+    return verifyValue(incoming, hashed);
   }
 
-  private toSafeUser(user: UserEntity) {
-    // ตัดข้อมูลอ่อนไหวก่อนส่งกลับ
-    const {
-      hashPassword,
-      refreshToken,
-      passwordResetToken,
-      passwordResetExpiresAt,
-      ...rest
-    } = user;
-    // mark ฟิลด์ที่ไม่ต้องการใช้ เพื่อให้ linter ทราบว่าเจตนาตัดออก
-    void hashPassword;
-    void refreshToken;
-    void passwordResetToken;
-    void passwordResetExpiresAt;
-    return rest;
+  private getSaltRounds(): number {
+    return Number(this.configService.get<string>('BCRYPT_SALT_ROUNDS', '10'));
+  }
+
+  private safeUser(user: UserEntity) {
+    return sanitizeUser(user);
   }
 
   private async issueTokens(user: UserEntity): Promise<{
@@ -378,52 +368,4 @@ export class AuthService {
   }
 
   // สร้าง verify-email token สำหรับส่งลิงก์ยืนยัน
-  private async issueVerifyEmailToken(user: UserEntity): Promise<string> {
-    const secret =
-      this.configService.get<string>('JWT_VERIFY_EMAIL_SECRET') ??
-      this.configService.get<string>('JWT_SECRET');
-    const expiresIn = this.configService.get<string>(
-      'JWT_VERIFY_EMAIL_EXPIRES_IN',
-      '1d',
-    ) as StringValue;
-    return this.jwtService.signAsync(
-      {
-        sub: user.id,
-        email: user.email,
-        purpose: 'verify_email',
-      },
-      { secret, expiresIn },
-    );
-  }
-
-  // ตรวจสอบ verify-email token และคืน payload ที่ผ่านการตรวจสอบ
-  private async verifyEmailToken(token: string): Promise<{
-    sub: number;
-    email: string;
-  }> {
-    const secret =
-      this.configService.get<string>('JWT_VERIFY_EMAIL_SECRET') ??
-      this.configService.get<string>('JWT_SECRET');
-    let payload:
-      | {
-          sub?: number;
-          email?: string;
-          purpose?: string;
-        }
-      | undefined;
-    try {
-      payload = await this.jwtService.verifyAsync(token, { secret });
-    } catch {
-      throw new UnauthorizedException('Invalid verify token');
-    }
-    if (
-      !payload?.sub ||
-      typeof payload.sub !== 'number' ||
-      payload.purpose !== 'verify_email' ||
-      typeof payload.email !== 'string'
-    ) {
-      throw new UnauthorizedException('Invalid verify token');
-    }
-    return { sub: payload.sub, email: payload.email };
-  }
 }

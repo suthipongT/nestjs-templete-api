@@ -8,14 +8,15 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 // นำ TypeOrmModule สำหรับเชื่อมต่อฐานข้อมูล
 import { TypeOrmModule } from '@nestjs/typeorm';
-// โมดูล auth สำหรับ signup/login
-import { AuthModule } from './modules/auth/auth.module';
-import { UserModule } from './modules/user/user.module';
 // นำคอนโทรลเลอร์ของแอป (health, csrf-token)
 import { AppController } from './app.controller';
 // นำ interceptor/filter เพื่อตอบกลับในรูปแบบมาตรฐาน
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
+// Import modules
+import { AuthModule } from './modules/auth/auth.module';
+import { UserModule } from './modules/user/user.module';
+import { DutiesModule } from './modules/duties/duties.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { ResponseInterceptor } from './common/interceptors/response.interceptor'
     AuthModule,
     // โมดูลผู้ใช้ (ต้องใช้ access token)
     UserModule,
+    DutiesModule,
   ],
   // ลงทะเบียนคอนโทรลเลอร์หลัก
   controllers: [AppController],
